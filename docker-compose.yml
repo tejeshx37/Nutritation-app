@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15
+    container_name: nutrition_db
+    environment:
+      POSTGRES_DB: nutrition_db
+      POSTGRES_USER: nutrition_user
+      POSTGRES_PASSWORD: nutrition_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - nutrition_network
+    restart: unless-stopped
+
+  # Redis for caching (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: nutrition_redis
+    ports:
+      - "6379:6379"
+    networks:
+      - nutrition_network
+    restart: unless-stopped
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: nutrition_backend
+    environment:
+      - DATABASE_URL=postgresql://nutrition_user:nutrition_password@postgres:5432/nutrition_db
+      - REDIS_URL=redis://redis:6379
+      - DEBUG=true
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - nutrition_network
+    restart: unless-stopped
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: nutrition_frontend
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - nutrition_network
+    restart: unless-stopped
+    command: npm start
+
+networks:
+  nutrition_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
